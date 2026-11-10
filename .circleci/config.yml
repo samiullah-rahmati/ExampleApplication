@@ -1,10 +1,18 @@
+
 version: 2.1
 
 workflows:
-  version: 2
-  build:
+  build-and-deploy:
     jobs:
       - build:
+          filters:
+            branches:
+              only:
+                - main
+
+      - deploy:
+          requires:
+            - build
           filters:
             branches:
               only:
@@ -17,16 +25,41 @@ jobs:
       - image: circleci/node:10.16.3
     steps:
       - checkout
+
       - run:
           name: update-npm
           command: 'sudo npm install -g npm@5'
+
       - restore_cache:
           key: dependency-cache-{{ checksum "package-lock.json" }}
+
       - run:
           name: install-npm
           command: npm install
+
       - save_cache:
           key: dependency-cache-{{ checksum "package-lock.json" }}
           paths:
             - ./node_modules
 
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - "SHA256:A18XiQiGGGp+2VQ7N422L9ifm1hiZWH2KVEKuTtAF/0"
+
+      - run:
+          name: Deploy application to EC2
+          command: |
+            ssh -o StrictHostKeyChecking=accept-new \
+              "$EC2_USERNAME@$EC2_PUBLIC_DNS" \
+              'if [ -d "$HOME/ExampleApplication/.git" ]; then
+                 cd "$HOME/ExampleApplication" && git pull origin main
+               else
+                 git clone https://github.com/samiullah-rahmati/ExampleApplication.git "$HOME/ExampleApplication"
+               fi &&
+               cd "$HOME/ExampleApplication" &&
+               chmod +x deploy.sh &&
+               ./deploy.sh'
